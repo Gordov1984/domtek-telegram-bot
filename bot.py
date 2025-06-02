@@ -1,67 +1,72 @@
 import os
 import logging
-from telegram import Update
+from flask import Flask, request
+from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from docx import Document
-import fitz  # PyMuPDF
-from PIL import Image
-from io import BytesIO
+from telegram.constants import ChatAction
+from python_docx import Document  # Используем python-docx
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Замените на свой токен
+BOT_TOKEN = os.getenv("BOT_TOKEN", "вставь_сюда_токен")
 
+app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# === Команды ===
+# Инициализация бота
+bot = Bot(token=BOT_TOKEN)
+application = Application.builder().token(BOT_TOKEN).build()
+
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот-помощник.\nОтправь мне файл (PDF, DOCX, изображение), и я помогу!")
+    await update.message.reply_text(
+        "Привет! Я бот-помощник.\n"
+        "Отправь мне файл (PDF, DOCX, изображение), и я помогу!"
+    )
 
+# /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Доступные команды:\n/start — запустить бота\n/help — список команд")
+    await update.message.reply_text(
+        "/start — запустить бота\n"
+        "/help — список команд"
+    )
 
-# === Обработка текстовых документов ===
+# Обработка документов
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = update.message.document
-    file_name = file.file_name.lower()
+    if file is None:
+        return
+
     file_id = file.file_id
+    file_name = file.file_name
     new_file = await context.bot.get_file(file_id)
-    file_bytes = await new_file.download_as_bytearray()
+    await update.message.chat.send_action(action=ChatAction.TYPING)
+    await new_file.download_to_drive(f"./{file_name}")
 
-    await update.message.reply_text(f"Файл '{file.file_name}' получен!\nОбрабатываю...")
+    await update.message.reply_text(
+        f"Файл '{file_name}' получен!\nОбрабатываю..."
+    )
 
-    try:
-        if file_name.endswith(".docx"):
-            doc = Document(BytesIO(file_bytes))
-            text = "\n".join([p.text for p in doc.paragraphs])
-        elif file_name.endswith(".pdf"):
-            text = ""
-            with fitz.open(stream=file_bytes, filetype="pdf") as pdf:
-                for page in pdf:
-                    text += page.get_text()
-        elif file_name.endswith((".jpg", ".jpeg", ".png", ".webp")):
-            image = Image.open(BytesIO(file_bytes))
-            text = "[Изображение получено. Распознавание текста пока не подключено.]"
-        else:
-            await update.message.reply_text("⚠️ Неподдерживаемый формат файла.")
-            return
+    # Симуляция анализа
+    await update.message.reply_text("✅ Анализ файла завершён (симуляция).")
 
-        if not text.strip():
-            text = "⚠️ Текст не найден или файл пуст."
+# Обработка изображений
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Картинка получена! Обрабатываю (симуляция)...")
+    await update.message.reply_text("✅ Анализ изображения завершён (симуляция).")
 
-        await update.message.reply_text(f"✅ Анализ завершён:\n\n{text[:3500]}")  # Telegram ограничение ~4096
+# Роут для Railway
+@app.route("/", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    application.update_queue.put_nowait(update)
+    return "ok"
 
-    except Exception as e:
-        logging.error(f"Ошибка при обработке файла: {e}")
-        await update.message.reply_text("❌ Произошла ошибка при обработке файла.")
+# Регистрация хендлеров
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+application.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
-# === Основной запуск ===
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-
-    app.run_polling()
-
+# Запуск локального режима (если нужно)
 if __name__ == "__main__":
-    main()
+    application.run_polling()
