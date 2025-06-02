@@ -1,104 +1,77 @@
-import logging
+from telegram import Update, Document
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters, CommandHandler
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from docx import Document
 import fitz  # PyMuPDF
+import docx
 import pandas as pd
+from PIL import Image
+import pytesseract
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = "твой_токен_сюда"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот-помощник. Пришли мне PDF, DOCX, TXT, XLSX, фото или видео — и я их обработаю.")
+    await update.message.reply_text("Привет! Пришли мне PDF, Word, Excel или фото, и я обработаю их.")
 
-# PDF
-async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await update.message.document.get_file()
-    file_path = f"{file.file_unique_id}.pdf"
+async def handle_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document = update.message.document
+    file_name = document.file_name.lower()
+
+    file = await context.bot.get_file(document.file_id)
+    file_path = f"/tmp/{document.file_name}"
     await file.download_to_drive(file_path)
 
-    try:
-        doc = fitz.open(file_path)
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        preview = text[:4000] or "Файл пустой."
-        await update.message.reply_text(f"Текст из PDF:\n\n{preview}")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка PDF: {e}")
-    finally:
-        os.remove(file_path)
-
-# DOCX
-async def handle_docx(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await update.message.document.get_file()
-    file_path = f"{file.file_unique_id}.docx"
-    await file.download_to_drive(file_path)
+    response = ""
 
     try:
-        doc = Document(file_path)
-        text = "\n".join([p.text for p in doc.paragraphs])
-        preview = text[:4000] or "Файл пустой."
-        await update.message.reply_text(f"Текст из DOCX:\n\n{preview}")
+        if file_name.endswith('.pdf'):
+            doc = fitz.open(file_path)
+            for page in doc:
+                response += page.get_text()
+            doc.close()
+            response = response.strip() or "PDF пустой или нечитабельный."
+
+        elif file_name.endswith('.docx'):
+            doc = docx.Document(file_path)
+            for para in doc.paragraphs:
+                response += para.text + '\n'
+            response = response.strip() or "Документ пустой."
+
+        elif file_name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(file_path)
+            response = df.to_string(index=False)
+            response = response.strip() or "Файл Excel пустой или нечитабельный."
+
+        else:
+            response = "Тип файла не поддерживается."
+
     except Exception as e:
-        await update.message.reply_text(f"Ошибка DOCX: {e}")
-    finally:
-        os.remove(file_path)
+        response = f"Ошибка: {e}"
 
-# TXT
-async def handle_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await update.message.document.get_file()
-    file_path = f"{file.file_unique_id}.txt"
-    await file.download_to_drive(file_path)
+    await update.message.reply_text(response[:4000])  # Telegram лимит
 
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        preview = content[:4000] or "Файл пустой."
-        await update.message.reply_text(f"Текст из TXT:\n\n{preview}")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка TXT: {e}")
-    finally:
-        os.remove(file_path)
+    os.remove(file_path)
 
-# XLSX
-async def handle_xlsx(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await update.message.document.get_file()
-    file_path = f"{file.file_unique_id}.xlsx"
-    await file.download_to_drive(file_path)
-
-    try:
-        df = pd.read_excel(file_path)
-        preview = df.head().to_string()
-        await update.message.reply_text(f"Таблица из XLSX:\n\n{preview}")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка XLSX: {e}")
-    finally:
-        os.remove(file_path)
-
-# Photo
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Фото получено! (Обработка изображений будет добавлена позже)")
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+    file_path = "/tmp/photo.jpg"
+    await file.download_to_drive(file_path)
 
-# Video
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Видео получено! (Обработка видео пока отключена)")
+    try:
+        text = pytesseract.image_to_string(Image.open(file_path))
+        text = text.strip() or "Текст не найден."
+        await update.message.reply_text(text[:4000])
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при обработке фото: {e}")
+    finally:
+        os.remove(file_path)
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("pdf"), handle_pdf))
-    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("docx"), handle_docx))
-    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("txt"), handle_txt))
-    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("xlsx"), handle_xlsx))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
     app.run_polling()
 
