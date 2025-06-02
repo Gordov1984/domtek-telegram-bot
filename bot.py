@@ -1,72 +1,106 @@
-import os
 import logging
-from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.constants import ChatAction
-from python_docx import Document  # Используем python-docx
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from docx import Document
+import fitz  # PyMuPDF
+import pandas as pd
 
-# Замените на свой токен
-BOT_TOKEN = os.getenv("BOT_TOKEN", "вставь_сюда_токен")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.getenv("BOT_TOKEN")
 
-# Инициализация бота
-bot = Bot(token=BOT_TOKEN)
-application = Application.builder().token(BOT_TOKEN).build()
-
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Я бот-помощник.\n"
-        "Отправь мне файл (PDF, DOCX, изображение), и я помогу!"
-    )
+    await update.message.reply_text("Привет! Я бот-помощник. Пришли мне PDF, DOCX, TXT, XLSX, фото или видео — и я их обработаю.")
 
-# /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "/start — запустить бота\n"
-        "/help — список команд"
-    )
+# PDF
+async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await update.message.document.get_file()
+    file_path = f"{file.file_unique_id}.pdf"
+    await file.download_to_drive(file_path)
 
-# Обработка документов
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = update.message.document
-    if file is None:
-        return
+    try:
+        doc = fitz.open(file_path)
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        preview = text[:4000] or "Файл пустой."
+        await update.message.reply_text(f"Текст из PDF:\n\n{preview}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка PDF: {e}")
+    finally:
+        os.remove(file_path)
 
-    file_id = file.file_id
-    file_name = file.file_name
-    new_file = await context.bot.get_file(file_id)
-    await update.message.chat.send_action(action=ChatAction.TYPING)
-    await new_file.download_to_drive(f"./{file_name}")
+# DOCX
+async def handle_docx(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await update.message.document.get_file()
+    file_path = f"{file.file_unique_id}.docx"
+    await file.download_to_drive(file_path)
 
-    await update.message.reply_text(
-        f"Файл '{file_name}' получен!\nОбрабатываю..."
-    )
+    try:
+        doc = Document(file_path)
+        text = "\n".join([p.text for p in doc.paragraphs])
+        preview = text[:4000] or "Файл пустой."
+        await update.message.reply_text(f"Текст из DOCX:\n\n{preview}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка DOCX: {e}")
+    finally:
+        os.remove(file_path)
 
-    # Симуляция анализа
-    await update.message.reply_text("✅ Анализ файла завершён (симуляция).")
+# TXT
+async def handle_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await update.message.document.get_file()
+    file_path = f"{file.file_unique_id}.txt"
+    await file.download_to_drive(file_path)
 
-# Обработка изображений
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Картинка получена! Обрабатываю (симуляция)...")
-    await update.message.reply_text("✅ Анализ изображения завершён (симуляция).")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        preview = content[:4000] or "Файл пустой."
+        await update.message.reply_text(f"Текст из TXT:\n\n{preview}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка TXT: {e}")
+    finally:
+        os.remove(file_path)
 
-# Роут для Railway
-@app.route("/", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put_nowait(update)
-    return "ok"
+# XLSX
+async def handle_xlsx(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await update.message.document.get_file()
+    file_path = f"{file.file_unique_id}.xlsx"
+    await file.download_to_drive(file_path)
 
-# Регистрация хендлеров
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+    try:
+        df = pd.read_excel(file_path)
+        preview = df.head().to_string()
+        await update.message.reply_text(f"Таблица из XLSX:\n\n{preview}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка XLSX: {e}")
+    finally:
+        os.remove(file_path)
 
-# Запуск локального режима (если нужно)
+# Photo
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Фото получено! (Обработка изображений будет добавлена позже)")
+
+# Video
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Видео получено! (Обработка видео пока отключена)")
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("pdf"), handle_pdf))
+    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("docx"), handle_docx))
+    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("txt"), handle_txt))
+    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("xlsx"), handle_xlsx))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+
+    app.run_polling()
+
 if __name__ == "__main__":
-    application.run_polling()
+    main()
