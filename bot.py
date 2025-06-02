@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 app = Flask(__name__)
 
 # Вставь свой токен ниже вместо YOUR_BOT_TOKEN
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = 7670709310:AAEHgQkxcp4J30ZFBTXU9Z6mKUpp8q982Sg
 
 # /start команда
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
