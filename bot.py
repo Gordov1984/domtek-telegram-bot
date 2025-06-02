@@ -3,34 +3,30 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 app = Flask(__name__)
-BOT_TOKEN = "7670709310:AAEHgQk..."
 
-# Команда /start
+# ВСТАВЬ СВОЙ ТОКЕН СЮДА
+BOT_TOKEN = "7670709310:AAEHgQkxcp4J30ZFBTXU9Z6mKUpp8q982Sg"
+
+# /start команда
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Бот работает. Привет!")
+    await update.message.reply_text("✅ Бот работает!")
 
-# Команда /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ℹ️ Доступные команды:\n/start — запустить бота\n/help — помощь")
+# Инициализация бота
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+telegram_app.add_handler(CommandHandler("start", start))
 
-# Проверка Railway
+# Ping для Railway
 @app.route("/")
 def home():
     return "Bot is running!"
 
-# Запуск
+# Запуск polling
 if __name__ == "__main__":
     import asyncio
 
     async def main():
-        application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        await application.updater.idle()
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling()
 
     asyncio.run(main())
