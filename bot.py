@@ -25,4 +25,4 @@ if __name__ == "__main__":
     async def main():
         await telegram_app.initialize()
         await telegram_app.start()
-    asyncio.run(main())
+    asyncio.run(
