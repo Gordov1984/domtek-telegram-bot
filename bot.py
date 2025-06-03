@@ -1,32 +1,11 @@
-from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-app = Flask(__name__)
-
-# ВСТАВЬ СВОЙ ТОКЕН СЮДА
-BOT_TOKEN = "7670709310:AAEHgQkxcp4J30ZFBTXU9Z6mKUpp8q982Sg"
-
 # /start команда
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Бот работает!")
+    await update.message.reply_text("✅ Привет! Бот работает.")
 
-# Инициализация бота
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-telegram_app.add_handler(CommandHandler("start", start))
+app = ApplicationBuilder().token("7670709310:AAEHgQkxcp4J30ZFBTXU9Z6mKUpp8q982Sg").build()
+app.add_handler(CommandHandler("start", start))
 
-# Ping для Railway
-@app.route("/")
-def home():
-    return "Bot is running!"
-
-# Запуск polling
-if __name__ == "__main__":
-    import asyncio
-
-    async def main():
-        await telegram_app.initialize()
-        await telegram_app.start()
-        await telegram_app.updater.start_polling()
-
-    asyncio.run(main())
+app.run_polling()
