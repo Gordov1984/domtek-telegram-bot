@@ -1,14 +1,14 @@
 import os
 import openai
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Устанавливаем API-ключ OpenAI
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Привет! Бот работает и ждёт твой текст.")
+    await update.message.reply_text("✅ Привет! Бот работает.")
 
 # Ответ на обычные текстовые сообщения
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
