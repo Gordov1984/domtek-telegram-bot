@@ -1,48 +1,47 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
-import openai
+from telegram.ext import Application, MessageHandler, ContextTypes, filters
+from openai import OpenAI
+
+# Включаем логирование
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 # Инициализация OpenAI клиента
-openai_api_key = os.getenv("OPENAI_API_KEY")
-client = openai.OpenAI(api_key=openai_api_key)
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Логирование
-logging.basicConfig(level=logging.INFO)
-
-# Ответ на команду /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я ДомТек Ассистент. Задай мне вопрос.")
-
-# Ответ на любое сообщение
+# Обработчик входящих сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    prompt = update.message.text
+    user_text = update.message.text
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": user_text}]
         )
         reply = response.choices[0].message.content
         await update.message.reply_text(reply)
     except Exception as e:
+        logging.error(f"OpenAI error: {e}")
         await update.message.reply_text(f"Ошибка: {e}")
 
-# Основной запуск с webhook
-if __name__ == "__main__":
-    from telegram.ext import Application
-
+# Основная логика запуска через webhook
+def main():
     TOKEN = os.getenv("BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
+    app = Application.builder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Бот запущен через Webhook...")
+    logging.info("Бот запущен через Webhook...")
+
     app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
+        port=8080,
         webhook_url=WEBHOOK_URL
     )
+
+if __name__ == "__main__":
+    main()
