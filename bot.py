@@ -1,36 +1,38 @@
 import os
 import openai
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Настройки API
 openai.api_key = os.getenv("OPENAI_API_KEY")
-bot_token = os.getenv("BOT_TOKEN")
 
-# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Привет! Бот работает.")
+    await update.message.reply_text("Привет! Напиши мне что-нибудь, и я отвечу.")
 
-# Ответ на любое сообщение
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text
+    user_message = update.message.text
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": user_input}]
+            messages=[{"role": "user", "content": user_message}]
         )
-        reply = response.choices[0].message["content"]
+        reply = response.choices[0].message.content
         await update.message.reply_text(reply)
     except Exception as e:
-        await update.message.reply_text("Произошла ошибка: " + str(e))
+        await update.message.reply_text(f"Ошибка: {str(e)}")
 
-# Основной запуск
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(bot_token).build()
+    app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот запущен...")
-    app.run_polling()
+
+    port = int(os.environ.get('PORT', 8443))
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=os.getenv("BOT_TOKEN"),
+        webhook_url=f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}/{os.getenv('BOT_TOKEN')}"
+    )
