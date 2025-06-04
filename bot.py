@@ -1,46 +1,57 @@
 import os
 import logging
-import openai
+import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, ContextTypes, CommandHandler, MessageHandler, filters
+import openai
 
-# Логи
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Настройка логов
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Переменные окружения
+# Токены
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 openai.api_key = OPENAI_API_KEY
 
-# Хендлер
+# Обработка команды /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Привет! Отправь мне текст или документ — я всё обработаю.")
+
+# Обработка обычного текста
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
+    user_input = update.message.text
+    response = await ask_openai(user_input)
+    await update.message.reply_text(response)
 
+# Запрос к OpenAI
+async def ask_openai(prompt):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
+        response = await openai.ChatCompletion.acreate(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
         )
-        reply = response['choices'][0]['message']['content']
-        await update.message.reply_text(reply)
-
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        await update.message.reply_text("Ошибка: " + str(e))
+        logger.error(f"OpenAI error: {e}")
+        return "Ошибка при обращении к OpenAI."
 
-# Запуск
+# Главная функция
 async def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    await app.start()
-    await app.updater.start_polling()
-    await app.idle()
+    application = Application.builder().token(BOT_TOKEN).build()
+    await application.initialize()
+
+    # Хендлеры
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Запуск через Webhook
+    await application.start()
+    await application.bot.set_webhook(url=WEBHOOK_URL)
+    await application.updater.start_webhook()
+    await application.updater.idle()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
