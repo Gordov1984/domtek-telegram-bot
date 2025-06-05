@@ -1,50 +1,40 @@
+import os
 from flask import Flask, request
-from telegram import Update
+import telegram
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import openai
-import os
+import asyncio
 
-app = Flask(__name__)
-
-# Получаем токены из переменных среды
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-WEBHOOK_URL = "https://domtek-assistant.onrender.com"  # ЗАМЕНИ если адрес другой
 
-openai.api_key = OPENAI_KEY
+app = Flask(__name__)
+bot = telegram.Bot(token=TOKEN)
 
-# Обработка входящих сообщений
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "user", "content": user_message}
-        ]
-    )
-
-    reply = response.choices[0].message.content
-    await update.message.reply_text(reply)
-
-# Инициализация Telegram-приложения
-@app.before_first_request
-def start_bot():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Запускаем вебхук
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        webhook_url=WEBHOOK_URL
-    )
-
-# Маршрут для Render проверки
 @app.route('/')
 def index():
     return 'Бот работает!'
 
-# Запуск Flask
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    update = telegram.Update.de_json(request.get_json(force=True), bot)
+    asyncio.run(handle_message(update, None))
+    return 'ok'
+
+async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": user_message}],
+        api_key=OPENAI_KEY
+    )
+    reply = response.choices[0].message["content"]
+    await update.message.reply_text(reply)
+
+async def set_webhook():
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+    await bot.set_webhook(url=webhook_url)
+
 if __name__ == '__main__':
-    app.run()
+    asyncio.run(set_webhook())
+    app.run(host='0.0.0.0', port=10000)
