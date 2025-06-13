@@ -1,42 +1,33 @@
-from flask import Flask, request
-import openai
-import telegram
-from telegram.ext import Application, MessageHandler, filters
 import os
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, MessageHandler, Filters, CallbackContext
 
-# Получаем токены из переменных окружения
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-
-# Flask-приложение для Render
 app = Flask(__name__)
 
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+
+bot = Bot(token=BOT_TOKEN)
+dispatcher = Dispatcher(bot, None, use_context=True)
+
+def handle_message(update: Update, context: CallbackContext):
+    text = update.message.text or "Файл получен!" if update.message.document or update.message.photo else "?"
+    context.bot.send_message(chat_id=update.effective_chat.id, text=f"Ты написал: {text}")
+
+dispatcher.add_handler(MessageHandler(Filters.all, handle_message))
+
 @app.route('/')
-def index():
-    return 'Бот работает!'
+def home():
+    return 'Bot is alive!', 200
 
-# Telegram логика
-async def handle_message(update, context):
-    try:
-        user_message = update.message.text
-        print(f"Пользователь написал: {user_message}")
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": user_message}],
-            api_key=OPENAI_KEY
-        )
-        reply = response.choices[0].message["content"]
-        await update.message.reply_text(reply)
-
-    except Exception as e:
-        print(f"Ошибка при обработке сообщения: {e}")
-        await update.message.reply_text("Произошла ошибка. Попробуй ещё раз позже.")
-
-def run_bot():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), bot)
+        dispatcher.process_update(update)
+        return 'ok', 200
 
 if __name__ == '__main__':
-    run_bot()
+    bot.set_webhook(url=WEBHOOK_URL)
+    app.run(host='0.0.0.0', port=10000)
